@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -106,7 +107,9 @@ func New(opts Options) *Registry {
 
 // Start launches fn in a goroutine and returns the job record. fn writes its
 // progress to the supplied writer. It fails with ErrBusy if another job for
-// the same target is still running.
+// the same target is still running. A panic inside fn is recovered and
+// recorded as a failed job, the same as an ordinary error return, rather than
+// taking down the process.
 func (r *Registry) Start(kind, target, label string, fn func(context.Context, *TailWriter) error) (Job, error) {
 	r.mu.Lock()
 	for _, e := range r.jobs {
@@ -136,7 +139,7 @@ func (r *Registry) Start(kind, target, label string, fn func(context.Context, *T
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		err := fn(r.base, &TailWriter{buf: e.buf})
+		err := runJob(r.base, fn, &TailWriter{buf: e.buf})
 
 		e.mu.Lock()
 		e.job.Finished = time.Now()
@@ -155,6 +158,21 @@ func (r *Registry) Start(kind, target, label string, fn func(context.Context, *T
 	}()
 
 	return r.snapshot(e), nil
+}
+
+// runJob calls fn and recovers a panic from it, turning it into an error
+// indistinguishable in kind from any other job failure. This is a
+// single-process, single-tenant service: an unrecovered panic in fn (in
+// practice git.Clone or git.Init, parsing subprocess output) would otherwise
+// crash the whole server, taking every other in-flight job and live session
+// down with it, instead of marking just this one job StateFailed.
+func runJob(ctx context.Context, fn func(context.Context, *TailWriter) error, w *TailWriter) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("panic: %v", p)
+		}
+	}()
+	return fn(ctx, w)
 }
 
 // Get returns a job by ID.

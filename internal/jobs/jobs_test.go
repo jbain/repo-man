@@ -76,6 +76,43 @@ func TestStartRecordsFailure(t *testing.T) {
 	}
 }
 
+func TestStartRecoversFromAPanicAndRecordsFailure(t *testing.T) {
+	done := make(chan struct{}, 2)
+	r := newRegistry(t, Options{OnDone: func() { done <- struct{}{} }})
+
+	job, err := r.Start("clone", "a/b", "", func(ctx context.Context, w *TailWriter) error {
+		w.Write([]byte("about to blow up\n"))
+		panic("boom")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-done
+
+	final, ok := r.Get(job.ID)
+	if !ok {
+		t.Fatal("job missing")
+	}
+	if final.State != StateFailed {
+		t.Fatalf("state = %q, want %q", final.State, StateFailed)
+	}
+	if !strings.Contains(final.Err, "panic") || !strings.Contains(final.Err, "boom") {
+		t.Errorf("err = %q, want it to mention the panic value", final.Err)
+	}
+	if final.Finished.IsZero() {
+		t.Error("a recovered panic must still finalize the job record")
+	}
+
+	// The registry itself, and the process, must survive: a second job for a
+	// different target still runs normally.
+	job2, err := r.Start("clone", "c/d", "", func(ctx context.Context, w *TailWriter) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	waitFinished(t, r, job2.ID)
+}
+
 func TestStartRejectsASecondJobForTheSameTarget(t *testing.T) {
 	r := newRegistry(t, Options{})
 	release := make(chan struct{})
