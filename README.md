@@ -2,6 +2,8 @@
 
 A web dashboard for the git repositories you have checked out locally.
 
+![repo-man dashboard](docs/screenshot.png)
+
 It assumes the Go-style layout — every checkout under one root, keyed by its
 origin:
 
