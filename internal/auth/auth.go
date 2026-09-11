@@ -212,7 +212,7 @@ func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passphrase, next, err := readLoginRequest(r)
+	passphrase, next, err := readLoginRequest(w, r)
 	if err != nil {
 		a.respondLoginFailure(w, r, jsonMode, http.StatusBadRequest, "malformed request", 0)
 		return
@@ -314,8 +314,11 @@ func (a *Authenticator) respondLoginFailure(w http.ResponseWriter, r *http.Reque
 }
 
 // readLoginRequest extracts the passphrase and next fields from either a
-// JSON or a form-encoded request body, based on Content-Type.
-func readLoginRequest(r *http.Request) (passphrase, next string, err error) {
+// JSON or a form-encoded request body, based on Content-Type. Both branches
+// cap how much of the body they will read to maxLoginBodyBytes: this handler
+// takes anonymous traffic by definition, and must not assume an outer
+// handler has already applied a body-size limit of its own.
+func readLoginRequest(w http.ResponseWriter, r *http.Request) (passphrase, next string, err error) {
 	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
 		var body struct {
 			Passphrase string `json:"passphrase"`
@@ -329,6 +332,10 @@ func readLoginRequest(r *http.Request) (passphrase, next string, err error) {
 		}
 		return body.Passphrase, body.Next, nil
 	}
+	// r.ParseForm falls back to its own 10MB default cap when Body isn't
+	// already a size-limited reader, which is 160x the limit above; wrap it
+	// the same way the JSON branch already is.
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		return "", "", err
 	}

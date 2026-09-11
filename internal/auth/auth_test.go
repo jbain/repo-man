@@ -294,6 +294,33 @@ func TestLoginResponseShapes(t *testing.T) {
 	})
 }
 
+// TestLoginRejectsOversizedFormBody guards the form-encoded path the same
+// way the JSON path is already covered: without MaxBytesReader wrapping
+// r.Body, ParseForm falls back to its own 10MB default, letting an
+// unauthenticated caller force a much larger read than this package's
+// documented 64KB cap on every /login POST.
+func TestLoginRejectsOversizedFormBody(t *testing.T) {
+	a := New(Options{Passphrase: "hunter2"})
+
+	huge := strings.Repeat("a", maxLoginBodyBytes+1)
+	form := url.Values{"passphrase": {huge}}
+	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "203.0.113.50:1"
+	w := httptest.NewRecorder()
+	a.Login(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want a redirect reporting the malformed request", w.Code)
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "error=invalid") {
+		t.Errorf("expected error=invalid in redirect, got %q", loc)
+	}
+	if len(w.Result().Cookies()) != 0 {
+		t.Error("an oversized login body must not create a session")
+	}
+}
+
 func TestLogoutInvalidatesSession(t *testing.T) {
 	clock := newFakeClock()
 	a := New(Options{Passphrase: "hunter2", now: clock.Now})
