@@ -33,6 +33,18 @@ func TestParseOwners(t *testing.T) {
 		},
 		{"empty entries are skipped", "jbain,,", []model.Owner{{Host: "github.com", Login: "jbain"}}, false},
 		{"surrounding slashes trimmed", "/github.com/jbain/", []model.Owner{{Host: "github.com", Login: "jbain"}}, false},
+		{
+			"host case is normalized so it agrees with a cloned repo's parsed remote host",
+			"GitHub.com/jbain",
+			[]model.Owner{{Host: "github.com", Login: "jbain"}},
+			false,
+		},
+		{
+			"host case normalization lets a mixed-case duplicate collapse too",
+			"GitHub.com/jbain,github.com/jbain",
+			[]model.Owner{{Host: "github.com", Login: "jbain"}},
+			false,
+		},
 		{"too many segments", "github.com/org/team", nil, true},
 		{"missing login", "github.com/", nil, true},
 	}

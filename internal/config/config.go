@@ -183,8 +183,13 @@ func resolveRoot(p string) (string, error) {
 }
 
 // ParseOwners parses a comma-separated owner list. Each entry is either
-// "host/login" or a bare "login", which defaults to github.com. Duplicates are
-// dropped, preserving first-seen order.
+// "host/login" or a bare "login", which defaults to github.com. The host is
+// lowercased so it agrees with git.ParseRemoteURL, which lowercases the host
+// it reads back out of a cloned repo's origin URL: without this, an owner
+// configured with mixed case (e.g. "GitHub.com/jbain") would produce ghosts
+// whose Slug() never matches the Slug() of a real checkout of the same repo,
+// duplicating it forever. Duplicates are dropped, preserving first-seen
+// order.
 func ParseOwners(s string) ([]model.Owner, error) {
 	var out []model.Owner
 	seen := map[string]bool{}
@@ -199,7 +204,7 @@ func ParseOwners(s string) ([]model.Owner, error) {
 		var o model.Owner
 		host, login, ok := strings.Cut(entry, "/")
 		if ok {
-			o = model.Owner{Host: host, Login: strings.TrimSuffix(login, "/")}
+			o = model.Owner{Host: strings.ToLower(host), Login: strings.TrimSuffix(login, "/")}
 		} else {
 			o = model.Owner{Host: "github.com", Login: host}
 		}
