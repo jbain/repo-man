@@ -168,6 +168,16 @@ func Init(ctx context.Context, absPath, branch string) error {
 // directory is created if needed; absPath itself must not already exist,
 // since git clone otherwise happily clones into (and clutters) an existing
 // empty directory and we want Clone's failure modes to match Init's.
+//
+// If the clone subprocess fails partway through (network drop, revoked
+// credentials, disk full), the partial absPath it created is removed, so a
+// retry isn't permanently blocked by wreckage from the failed attempt. That
+// cleanup only ever removes absPath itself -- never its parent, even though
+// MkdirAll may have created that too -- and only when absPath is confirmed to
+// not have existed immediately before git ran; a pre-existing directory
+// (already rejected above in the ordinary case, but checked again right
+// before exec in case something raced) is left untouched no matter how the
+// clone fails, including on context cancellation.
 func Clone(ctx context.Context, url, absPath string, progress io.Writer) error {
 	// Defense in depth: the caller is expected to have already run url
 	// through ValidateCloneURL, but a leading dash here would be parsed by
@@ -185,6 +195,14 @@ func Clone(ctx context.Context, url, absPath string, progress io.Writer) error {
 		return err
 	}
 
+	// Re-check right before invoking git (rather than trusting the Stat
+	// above, which happened before MkdirAll and is a moment further removed
+	// from the clone itself): only if absPath is still absent here can we be
+	// sure that whatever exists there after a failed clone is wreckage this
+	// call made, safe to remove.
+	_, lerr := os.Lstat(absPath)
+	weCreatedIt := errors.Is(lerr, fs.ErrNotExist)
+
 	// --progress forces git to emit its progress meter even though stderr
 	// here is a pipe, not a terminal, so a caller that wants to show clone
 	// progress in a UI actually receives something to show.
@@ -197,6 +215,9 @@ func Clone(ctx context.Context, url, absPath string, progress io.Writer) error {
 		cmd.Stderr = &stderr
 	}
 	if err := cmd.Run(); err != nil {
+		if weCreatedIt {
+			os.RemoveAll(absPath)
+		}
 		return gitError([]string{"clone", url, absPath}, stderr.Bytes(), err)
 	}
 	return nil

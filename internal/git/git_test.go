@@ -3,9 +3,12 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -433,6 +436,65 @@ func TestClone_RefusesExistingDestination(t *testing.T) {
 
 	if err := Clone(context.Background(), src, dst, nil); err == nil {
 		t.Fatalf("Clone into an existing directory should fail")
+	}
+}
+
+// TestClone_RemovesPartialCloneOnFailure exercises the case Init already
+// handles for free but Clone has to detect itself: a clone that is
+// interrupted after it has created absPath but before it finished must not
+// leave that partial directory behind, since a later retry would otherwise
+// be permanently rejected as "already exists".
+//
+// A local clone of a small repo fails or succeeds before there's any window
+// to interrupt it, so this fakes "git" with a script that creates the
+// destination directory (mimicking real git's own behavior) and then blocks
+// until killed -- letting the test cancel the context at a moment it knows
+// the directory already exists, then assert Clone cleaned it up.
+func TestClone_RemovesPartialCloneOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake git stand-in is a POSIX shell script")
+	}
+	binDir := t.TempDir()
+	// "exec sleep" replaces the script's own process image rather than
+	// forking a child, so killing this script (what context cancellation
+	// does) closes its stderr pipe immediately instead of leaving an
+	// orphaned grandchild holding it open, which would otherwise make
+	// cmd.Wait block for the full sleep regardless of the kill.
+	script := "#!/bin/sh\n" +
+		"dest=\"\"\n" +
+		"for a in \"$@\"; do dest=\"$a\"; done\n" +
+		"mkdir -p \"$dest\"\n" +
+		"touch \"$dest/partial-object\"\n" +
+		"exec sleep 20\n"
+	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	dst := filepath.Join(t.TempDir(), "cloned")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		deadline := time.After(5 * time.Second)
+		for {
+			if _, err := os.Stat(filepath.Join(dst, "partial-object")); err == nil {
+				cancel()
+				return
+			}
+			select {
+			case <-deadline:
+				return // Clone below will time out on its own and report the failure.
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
+
+	if err := Clone(ctx, "https://example.invalid/x/y.git", dst, nil); err == nil {
+		t.Fatal("expected an error from the interrupted clone")
+	}
+	if _, err := os.Stat(dst); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("dst = (exists, %v), want removed since this call created it", err)
 	}
 }
 
