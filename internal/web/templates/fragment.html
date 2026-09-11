@@ -1,0 +1,6 @@
+{{- /*
+The live region, and nothing else. page.html renders the same "live" block
+inside <div id="live">, so app.js can replace that div's innerHTML with this
+response and the two can never drift apart.
+*/ -}}
+{{template "live" .}}

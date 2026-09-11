@@ -1,0 +1,72 @@
+# repoman runs as a single container alongside your checkout tree.
+#
+# Copy .env.example to .env and fill it in, then:
+#   docker compose up -d --build
+#
+# The service binds to 127.0.0.1 on the host by default. It expects to sit
+# behind a reverse proxy and a VPN; do not publish it on 0.0.0.0 without one.
+
+services:
+  repoman:
+    build:
+      context: .
+      args:
+        # Match the host user that owns the checkout tree, otherwise clones
+        # land with the wrong ownership and the scanner cannot read some repos.
+        UID: "${UID:-1000}"
+        GID: "${GID:-1000}"
+        VERSION: "${VERSION:-dev}"
+    image: repoman:local
+    container_name: repoman
+    restart: unless-stopped
+
+    ports:
+      # Host-local only. The reverse proxy is what faces the network.
+      - "127.0.0.1:${REPOMAN_PORT:-8464}:8464"
+
+    environment:
+      REPOMAN_ADDR: "0.0.0.0:8464"
+      REPOMAN_ROOT: "/git"
+      # Comma-separated accounts whose full repo list should be shown, e.g.
+      # "github.com/jbain,github.com/some-org". A bare name means github.com.
+      REPOMAN_OWNERS: "${REPOMAN_OWNERS:-}"
+      # Required in any real deployment. Empty disables authentication.
+      REPOMAN_PASSPHRASE: "${REPOMAN_PASSPHRASE:?set REPOMAN_PASSPHRASE in .env}"
+      # Set when the proxy terminates TLS, so the session cookie is Secure.
+      REPOMAN_SECURE_COOKIE: "${REPOMAN_SECURE_COOKIE:-true}"
+      REPOMAN_TRUST_PROXY_IP: "${REPOMAN_TRUST_PROXY_IP:-true}"
+      REPOMAN_FETCH_INTERVAL: "${REPOMAN_FETCH_INTERVAL:-15m}"
+      REPOMAN_SCAN_INTERVAL: "${REPOMAN_SCAN_INTERVAL:-60s}"
+      REPOMAN_LOG_LEVEL: "${REPOMAN_LOG_LEVEL:-info}"
+      # Used by the gh CLI for provider listings and by git for https clones
+      # of private repos.
+      GH_TOKEN: "${GH_TOKEN:-}"
+
+    volumes:
+      # The checkout tree. Read-write: cloning and initializing write here.
+      - "${REPO_ROOT:-${HOME}/git}:/git"
+      # git identity and any credential/url rewriting rules, read-only.
+      - "${HOME}/.gitconfig:/home/repoman/.gitconfig:ro"
+      # ssh keys and known_hosts, read-only, for ssh remotes. Comment this out
+      # if every remote you use is https.
+      - "${HOME}/.ssh:/home/repoman/.ssh:ro"
+
+    # The process is a single Go binary with a handful of git children; these
+    # limits exist to keep a runaway clone from taking the host down, not
+    # because the service is memory hungry.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      # /login always answers, with or without a passphrase configured, and
+      # does not require a session.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8464/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

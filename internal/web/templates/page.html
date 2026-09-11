@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{.Title}}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%235b8def'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>repo-man</h1>
+    <p class="root mono" title="{{.Config.Root}}">{{.Config.Root}}</p>
+  </div>
+  <div class="toolbar">
+    <button type="button" class="btn" id="btn-new">New repo</button>
+    <button type="button" class="btn" id="btn-clone">Clone by URL</button>
+    <button type="button" class="btn" data-action="rescan" title="Re-walk the filesystem">Rescan</button>
+    <button type="button" class="btn" data-action="fetchall" title="git fetch every checkout with a remote">Fetch all</button>
+    <button type="button" class="btn btn--icon" id="btn-theme" aria-label="Switch colour theme" title="Switch colour theme">
+      <span aria-hidden="true">◐</span>
+    </button>
+    {{if .AuthEnabled}}
+    <form method="post" action="/logout" class="inline-form">
+      <button type="submit" class="btn">Sign out</button>
+    </form>
+    {{end}}
+  </div>
+</header>
+
+<p class="notice" id="notice" role="alert" hidden></p>
+
+<main>
+  <div id="live">
+    {{template "live" .}}
+  </div>
+</main>
+
+<footer class="footer">
+  <span>scan every {{.Config.ScanInterval}}</span>
+  <span>fetch every {{if .Config.FetchInterval}}{{.Config.FetchInterval}}{{else}}never{{end}}</span>
+  <span class="footer-js" id="poll-state" aria-live="polite"></span>
+</footer>
+
+<datalist id="dirs">
+  {{template "diroptions" .Root}}
+</datalist>
+
+<dialog id="dlg-new" class="dlg" aria-labelledby="dlg-new-title">
+  <form method="post" action="/api/init" id="form-new" class="dlg-form">
+    <h2 id="dlg-new-title">New repository</h2>
+    <p class="dlg-hint">Creates the directory and runs <code>git init</code>. Nothing is pushed anywhere.</p>
+    <label for="new-parent">Parent directory <span class="lbl-hint">root-relative, blank for the root</span></label>
+    <input type="text" id="new-parent" name="parent" list="dirs" autocomplete="off" spellcheck="false" placeholder="github.com/jbain">
+    <label for="new-name">Name</label>
+    <input type="text" id="new-name" name="name" required autocomplete="off" spellcheck="false" placeholder="new-thing">
+    <label for="new-branch">Initial branch</label>
+    <input type="text" id="new-branch" name="branch" value="main" autocomplete="off" spellcheck="false">
+    <p class="dlg-error" data-error hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn btn--primary">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-clone" class="dlg" aria-labelledby="dlg-clone-title">
+  <form method="post" action="/api/clone" id="form-clone" class="dlg-form">
+    <h2 id="dlg-clone-title">Clone a repository</h2>
+    <p class="dlg-hint">Anything git accepts, plus <code>owner/name</code> and <code>host/owner/name</code>.</p>
+    <label for="clone-url">Clone URL</label>
+    <input type="text" id="clone-url" name="url" required autocomplete="off" spellcheck="false" placeholder="https://github.com/jbain/repo-man">
+    <label for="clone-dest">Destination <span class="lbl-hint">optional, derived from the URL if blank</span></label>
+    <input type="text" id="clone-dest" name="dest" list="dirs" autocomplete="off" spellcheck="false" placeholder="github.com/jbain/repo-man">
+    <p class="dlg-error" data-error hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn btn--primary">Clone</button>
+    </div>
+  </form>
+</dialog>
+
+</body>
+</html>

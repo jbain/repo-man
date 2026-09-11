@@ -1,0 +1,177 @@
+{{- /*
+nodes.html holds only {{define}} blocks; its top level renders nothing.
+
+"live" is the region that page.html and fragment.html both render, so the two
+stay in sync by construction: page.html wraps it in <div id="live">, and
+fragment.html emits it bare for app.js to swap into that div.
+*/ -}}
+
+{{define "live"}}
+{{template "summary" .}}
+{{template "warnings" .}}
+{{template "jobs" .}}
+{{template "tree" .}}
+{{end}}
+
+
+{{define "summary"}}
+{{- $s := .Snapshot.Summary -}}
+<section class="summary" aria-label="Summary">
+  <ul class="counts">
+    <li class="count"><b>{{$s.Repos}}</b> <span>repos</span></li>
+    <li class="count{{if $s.Dirty}} is-dirty{{end}}"><b>{{$s.Dirty}}</b> <span>dirty</span></li>
+    <li class="count{{if $s.Behind}} is-behind{{end}}"><b>{{$s.Behind}}</b> <span>behind</span></li>
+    <li class="count{{if $s.Ahead}} is-ahead{{end}}"><b>{{$s.Ahead}}</b> <span>ahead</span></li>
+    <li class="count"><b>{{$s.Worktrees}}</b> <span>worktrees</span></li>
+    <li class="count"><b>{{$s.Ghosts}}</b> <span>ghosts</span></li>
+    {{if $s.Errors}}<li class="count is-error"><b>{{$s.Errors}}</b> <span>errors</span></li>{{end}}
+  </ul>
+  <ul class="stamps">
+    <li title="last filesystem scan">scanned <b>{{ago .Snapshot.ScannedAt}}</b></li>
+    <li title="last full git fetch round">fetched <b>{{ago .Snapshot.FetchedAt}}</b></li>
+    <li title="last provider repo listing">listed <b>{{ago .Snapshot.ListedAt}}</b></li>
+  </ul>
+</section>
+{{end}}
+
+
+{{define "warnings"}}
+{{- with .Snapshot.Warnings -}}
+<section class="warnings" role="status" aria-label="Warnings">
+  <p class="warnings-head">The tree may be incomplete:</p>
+  <ul>
+    {{range .}}<li>{{.}}</li>{{end}}
+  </ul>
+</section>
+{{- end -}}
+{{end}}
+
+
+{{define "jobs"}}
+{{- with .Jobs -}}
+<section class="jobs" aria-label="Operations">
+  <ul>
+    {{range .}}
+    <li class="job job--{{.State}}{{if .Running}} is-running{{end}}" data-job="{{.ID}}">
+      <span class="job-kind">{{.Kind}}</span>
+      <span class="job-label mono" title="{{.Label}}">{{.Label}}</span>
+      <span class="job-state">{{.State}}</span>
+      <span class="job-when">{{if .Running}}started {{ago .Started}}{{else}}{{ago .Finished}}{{end}}</span>
+      {{if .Err}}<p class="job-err">{{.Err}}</p>{{end}}
+      {{if and .Output (not .Err)}}{{if .Running}}<pre class="job-out mono">{{.Output}}</pre>{{end}}{{end}}
+      {{if and .Err .Output}}<pre class="job-out mono">{{.Output}}</pre>{{end}}
+    </li>
+    {{end}}
+  </ul>
+</section>
+{{- end -}}
+{{end}}
+
+
+{{define "tree"}}
+<nav class="tree" aria-label="Repository tree">
+  {{- if .Root.Children -}}
+  <ul class="tree-root">
+    {{range .Root.Children}}{{template "node" .}}{{end}}
+  </ul>
+  {{- else -}}
+  <p class="empty">Nothing under the root yet. Use <b>New repo</b> or <b>Clone by URL</b> to put something here.</p>
+  {{- end -}}
+</nav>
+{{end}}
+
+
+{{define "node"}}
+{{- $n := . -}}
+{{- $st := statusWord $n.Repo -}}
+<li class="node node--{{$n.Kind}}">
+  {{- if $n.Children -}}
+  <details class="disc" data-rel="{{$n.Rel}}" open>
+    <summary class="row row--{{$n.Kind}}{{if $st}} is-{{$st}}{{end}}">
+      <span class="caret" aria-hidden="true"></span>{{template "rowbody" $n}}
+    </summary>
+    <ul class="children">
+      {{range $n.Children}}{{template "node" .}}{{end}}
+    </ul>
+  </details>
+  {{- else -}}
+  <div class="row row--{{$n.Kind}}{{if $st}} is-{{$st}}{{end}}">
+    <span class="caret caret--leaf" aria-hidden="true"></span>{{template "rowbody" $n}}
+  </div>
+  {{- end -}}
+</li>
+{{end}}
+
+
+{{define "rowbody"}}
+{{- if eq .Kind "dir" -}}{{template "row-dir" .}}
+{{- else if eq .Kind "ghost" -}}{{template "row-ghost" .}}
+{{- else -}}{{template "row-repo" .}}
+{{- end -}}
+{{end}}
+
+
+{{define "row-dir"}}
+<span class="glyph glyph--dir" aria-hidden="true">▪</span>
+<span class="name">{{.Name}}</span>
+<span class="spacer"></span>
+<span class="actions">
+  <button type="button" class="btn btn--quiet" data-action="init" data-rel="{{.Rel}}"
+          title="Create a new repository inside {{if .Rel}}{{.Rel}}{{else}}the root{{end}}">new repo</button>
+</span>
+{{end}}
+
+
+{{define "row-repo"}}
+{{- $n := . -}}{{- $r := .Repo -}}{{- $s := .Repo.Status -}}
+<span class="glyph glyph--{{$n.Kind}}" aria-hidden="true">{{if eq $n.Kind "worktree"}}⌥{{else}}●{{end}}</span>
+<span class="name mono" title="{{$n.Rel}}">{{$n.Name}}</span>
+{{- if $r.Err}}
+<span class="branch mono is-error" title="{{$r.Err}}">uninspectable</span>
+{{- else}}
+<span class="branch mono" title="{{if $s.Upstream}}tracking {{$s.Upstream}}{{else}}no upstream{{end}}">
+  {{- if $s.Detached}}<span class="det">detached</span> {{short $s.Head}}{{else}}{{$s.Branch}}{{end -}}
+</span>
+{{- end}}
+<span class="badges">
+  {{- range badges $r}}{{if ne .Class "ok"}}<span class="badge badge--{{.Class}}" title="{{.Title}}">{{.Label}}</span>{{end}}{{end -}}
+</span>
+<span class="spacer"></span>
+<span class="meta">
+  {{- if and (not $r.Err) $s.Subject}}<span class="subject" title="{{$s.Subject}}">{{$s.Subject}}</span>{{end}}
+  {{- if and (not $r.Err) (not $s.LastCommit.IsZero)}}<span class="when" title="last commit">{{ago $s.LastCommit}}</span>{{end -}}
+</span>
+<span class="actions">
+  {{- if hasPrefix $r.Remote.URL "http"}}<a class="btn btn--quiet" href="{{$r.Remote.URL}}" target="_blank" rel="noreferrer noopener" title="{{$r.Remote.URL}}">open<span class="sr-only"> remote in a new tab</span></a>{{end}}
+  <button type="button" class="btn btn--quiet" data-action="fetch" data-rel="{{$n.Rel}}"
+          title="git fetch — last fetched {{ago $s.LastFetch}}">fetch</button>
+</span>
+{{end}}
+
+
+{{define "row-ghost"}}
+{{- $n := . -}}{{- $g := .Ghost -}}
+<span class="glyph glyph--ghost" aria-hidden="true">○</span>
+<span class="name mono" title="{{$g.Slug}}">{{$n.Name}}</span>
+<span class="notcloned">not cloned</span>
+<span class="tags">
+  {{- if $g.Private}}<span class="tag" title="private repository">private</span>{{end}}
+  {{- if $g.Fork}}<span class="tag">fork</span>{{end}}
+  {{- if $g.Archived}}<span class="tag">archived</span>{{end -}}
+</span>
+<span class="spacer"></span>
+<span class="meta">
+  {{- with $g.Description}}<span class="subject" title="{{.}}">{{.}}</span>{{end}}
+  {{- if not $g.UpdatedAt.IsZero}}<span class="when" title="last updated on the remote">{{ago $g.UpdatedAt}}</span>{{end -}}
+</span>
+<span class="actions actions--hover">
+  <button type="button" class="btn btn--primary" data-action="clone" data-url="{{$g.CloneURL}}" data-dest="{{$n.Rel}}"
+          title="Clone into {{$n.Rel}}">clone</button>
+</span>
+{{end}}
+
+
+{{- /* diroptions feeds the <datalist> behind the "parent directory" field. */ -}}
+{{define "diroptions"}}
+{{- if eq .Kind "dir"}}{{if .Rel}}<option value="{{.Rel}}"></option>{{end}}{{range .Children}}{{template "diroptions" .}}{{end}}{{end -}}
+{{end}}

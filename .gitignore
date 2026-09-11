@@ -1,0 +1,10 @@
+# Build output
+/repoman
+/dist/
+
+# Local configuration; .env.example is the tracked template.
+.env
+
+# Editor and OS noise
+.DS_Store
+*.swp
