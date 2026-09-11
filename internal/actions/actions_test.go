@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -128,6 +129,81 @@ func TestInitRepoLeavesAnExistingDirectoryAlone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(existing, ".git")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("a repository must not have been initialized in the existing directory")
+	}
+}
+
+// TestInitRepoRejectsAConcurrentCallForTheSameDestination exercises the guard
+// deterministically: with a claim already held (simulating a first InitRepo
+// call still in flight), a second call for the same destination must be
+// rejected immediately rather than racing git.Init against the first, and
+// must succeed again once the claim is released.
+func TestInitRepoRejectsAConcurrentCallForTheSameDestination(t *testing.T) {
+	requireGit(t)
+	root := newRoot(t)
+	svc := New(root, nil, nil)
+
+	abs, _, err := safepath.Resolve(root, "concurrent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !svc.beginInit(abs) {
+		t.Fatal("beginInit should succeed when nothing else holds the claim")
+	}
+
+	if _, err := svc.InitRepo(context.Background(), "", "concurrent", ""); !errors.Is(err, jobs.ErrBusy) {
+		t.Fatalf("InitRepo while another call holds the claim = %v, want ErrBusy", err)
+	}
+	if _, err := os.Stat(abs); !errors.Is(err, os.ErrNotExist) {
+		t.Error("a rejected concurrent InitRepo must not have touched the filesystem")
+	}
+
+	svc.endInit(abs)
+
+	if rel, err := svc.InitRepo(context.Background(), "", "concurrent", ""); err != nil || rel != "concurrent" {
+		t.Fatalf("InitRepo after the claim was released = (%q, %v), want it to succeed", rel, err)
+	}
+}
+
+// TestInitRepoConcurrentCallsRaceToExactlyOneWinner fires real concurrent
+// InitRepo calls at the same destination and asserts exactly one succeeds.
+// Before the concurrency guard, both could pass the "does it already exist"
+// check before either had created anything and both would call git.Init
+// against the same directory.
+func TestInitRepoConcurrentCallsRaceToExactlyOneWinner(t *testing.T) {
+	requireGit(t)
+	root := newRoot(t)
+	svc := New(root, nil, nil)
+
+	const n = 8
+	start := make(chan struct{})
+	results := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, results[i] = svc.InitRepo(context.Background(), "", "race-target", "")
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	successes := 0
+	for _, err := range results {
+		if err == nil {
+			successes++
+			continue
+		}
+		if !errors.Is(err, jobs.ErrBusy) && !errors.Is(err, ErrExists) {
+			t.Errorf("loser error = %v, want ErrBusy or ErrExists", err)
+		}
+	}
+	if successes != 1 {
+		t.Errorf("successes = %d, want exactly 1 of %d concurrent InitRepo calls to win", successes, n)
+	}
+	if _, err := os.Stat(filepath.Join(root, "race-target", ".git")); err != nil {
+		t.Errorf(".git missing after the race: %v", err)
 	}
 }
 

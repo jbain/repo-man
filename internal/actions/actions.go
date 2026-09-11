@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/jbain/repo-man/internal/git"
 	"github.com/jbain/repo-man/internal/jobs"
@@ -28,6 +29,16 @@ type Service struct {
 	// onChange is called after a synchronous action changes the filesystem, to
 	// trigger a rescan. Clone jobs signal through the registry's own callback.
 	onChange func()
+
+	// initing tracks the absolute destinations of InitRepo calls currently in
+	// flight, so a second concurrent request for the same destination gets
+	// ErrBusy instead of racing the first past the "does it already exist"
+	// check and into git init against the same directory. Clone gets the
+	// equivalent protection for free from jobs.Registry.Start's own
+	// busy-check; InitRepo runs synchronously and is never registered with
+	// the job registry, so it needs this guard of its own.
+	mu      sync.Mutex
+	initing map[string]struct{}
 }
 
 // New returns a Service rooted at root. reg may be nil only in tests that do
@@ -36,7 +47,27 @@ func New(root string, reg *jobs.Registry, onChange func()) *Service {
 	if onChange == nil {
 		onChange = func() {}
 	}
-	return &Service{root: root, reg: reg, onChange: onChange}
+	return &Service{root: root, reg: reg, onChange: onChange, initing: make(map[string]struct{})}
+}
+
+// beginInit claims abs for an in-flight InitRepo call, returning false if
+// another call already claimed it. The caller must release the claim with
+// endInit, however InitRepo returns.
+func (s *Service) beginInit(abs string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, busy := s.initing[abs]; busy {
+		return false
+	}
+	s.initing[abs] = struct{}{}
+	return true
+}
+
+// endInit releases a claim made by beginInit.
+func (s *Service) endInit(abs string) {
+	s.mu.Lock()
+	delete(s.initing, abs)
+	s.mu.Unlock()
 }
 
 // ErrExists is returned when the destination directory is already present.
@@ -48,7 +79,11 @@ var ErrExists = errors.New("destination already exists")
 //
 // This is synchronous: `git init` on a new empty directory is effectively
 // instant, so making the browser poll a job for it would be ceremony with no
-// payoff.
+// payoff. It is guarded against a second concurrent call for the same
+// destination (e.g. a double-click, or two browser tabs) by beginInit: without
+// it, both calls could pass the "does it already exist" check below before
+// either has created anything, and both would then race git init against the
+// same directory instead of the second one cleanly getting an error.
 func (s *Service) InitRepo(ctx context.Context, parentRel, name, branch string) (relPath string, err error) {
 	if err := safepath.ValidName(name); err != nil {
 		return "", err
@@ -63,6 +98,12 @@ func (s *Service) InitRepo(ctx context.Context, parentRel, name, branch string) 
 	if err != nil {
 		return "", err
 	}
+
+	if !s.beginInit(abs) {
+		return "", fmt.Errorf("%w: %s", jobs.ErrBusy, path.Join(parentClean, rel))
+	}
+	defer s.endInit(abs)
+
 	if _, err := os.Lstat(abs); err == nil {
 		return "", fmt.Errorf("%w: %s", ErrExists, path.Join(parentClean, rel))
 	} else if !errors.Is(err, os.ErrNotExist) {
