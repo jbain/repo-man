@@ -313,6 +313,39 @@ func TestWrongPassphraseIsRejected(t *testing.T) {
 	}
 }
 
+// TestLogoutIsReachableWithoutAValidSession guards against /logout itself
+// being caught by the auth gate: its whole job is to drop a session that
+// might already be invalid, expired, or missing (e.g. after a process
+// restart), so it must produce Logout's own clean "signed out" response
+// rather than the gate's "you must log in" redirect (which would carry a
+// next=%2Flogout query string instead of a bare /login, and would never
+// clear the stale cookie).
+func TestLogoutIsReachableWithoutAValidSession(t *testing.T) {
+	h, _, _ := newServer(t, "s3cret")
+
+	// No cookie at all.
+	w := do(t, h, http.MethodPost, "/logout", nil, nil)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want a redirect", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/login" {
+		t.Errorf("redirect = %q, want a bare /login (the auth gate must not have intercepted this)", loc)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge >= 0 {
+		t.Fatalf("expected Logout's own expiring cookie, got %+v", cookies)
+	}
+
+	// An invalid/stale cookie must not be rejected either.
+	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "repoman_session", Value: "not-a-real-session"})
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, req)
+	if w2.Code != http.StatusSeeOther || w2.Header().Get("Location") != "/login" {
+		t.Errorf("status = %d, location = %q, want a bare redirect to /login", w2.Code, w2.Header().Get("Location"))
+	}
+}
+
 func TestLoginPageRedirectsWhenAuthenticationIsDisabled(t *testing.T) {
 	h, _, _ := newServer(t, "")
 	w := do(t, h, http.MethodGet, "/login", nil, nil)

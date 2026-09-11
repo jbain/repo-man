@@ -78,16 +78,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/clone", s.handleClone)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/jobs/{id}", s.handleJob)
-	mux.HandleFunc("POST /logout", s.auth.Logout)
 
 	// Everything above requires a session.
 	protected := s.auth.Require(mux)
 
 	// The login page and the assets it references must stay reachable while
 	// unauthenticated, so they are routed outside the protected mux.
+	// /logout belongs here too, not behind Require: its whole job is to drop
+	// a session that might already be invalid, expired, or absent (e.g. after
+	// a process restart, which logs everyone out), and auth.Logout already
+	// tolerates a missing/invalid cookie gracefully. Gating it would mean a
+	// browser holding a stale cookie gets redirected to /login instead of a
+	// clean "signed out" response, and never has the stale cookie cleared.
 	public := http.NewServeMux()
 	public.HandleFunc("GET /login", s.handleLoginPage)
 	public.HandleFunc("POST /login", s.auth.Login)
+	public.HandleFunc("POST /logout", s.auth.Logout)
 	public.Handle("GET /static/", s.staticHandler())
 	public.Handle("/", protected)
 
