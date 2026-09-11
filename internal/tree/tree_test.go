@@ -112,6 +112,21 @@ func TestWorktreeWithUnknownPrimaryStaysAtItsFilesystemLocation(t *testing.T) {
 	}
 }
 
+func TestEmptyDirectorySharingTheWorktreesNamingConventionSurvives(t *testing.T) {
+	// An ordinary empty directory that merely matches the "-worktrees" naming
+	// convention -- e.g. one the user created via "new repo" as a staging
+	// spot, the same convention repo-man itself produces -- must not be
+	// pruned: no worktree was ever actually parked in it, so pruning by name
+	// alone would delete a directory the user made on purpose.
+	got, _ := Build(Input{
+		Root: root,
+		Dirs: []string{"github.com", "github.com/jbain", "github.com/jbain/repo-man-worktrees"},
+	})
+	if k, ok := paths(got)["github.com/jbain/repo-man-worktrees"]; !ok || k != model.KindDir {
+		t.Errorf("empty directory sharing the naming convention = %q (present=%v), want it kept", k, ok)
+	}
+}
+
 func TestNonEmptyWorktreesDirectorySurvivesPruning(t *testing.T) {
 	// Only *emptied* -worktrees directories are pruned. One holding something
 	// that is not a linked worktree still has content worth showing.

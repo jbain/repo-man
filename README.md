@@ -82,8 +82,11 @@ session store. A restart costs one re-login and one scan.
 Worktrees are detected by their `.git` *file* and its `gitdir:` pointer, not by
 the `-worktrees` directory name — the naming convention is just where you
 happen to park them, so one parked elsewhere is still identified correctly. In
-the tree they are re-parented onto their primary checkout, and the emptied
-`-worktrees` directory is pruned away.
+the tree they are re-parented onto their primary checkout, and the directory
+that actually held them is pruned away once it's left empty. That pruning
+tracks the real directory a worktree was parked in, not the `-worktrees` name
+pattern, so an ordinary empty directory that merely happens to share the
+naming convention is left alone like any other empty directory.
 
 A repository counts as "already cloned" if any checkout under the root has it
 as `origin`, not merely if something sits at the conventional path. Clone

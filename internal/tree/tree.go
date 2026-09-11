@@ -49,7 +49,7 @@ func Build(in Input) (*model.Node, Summary) {
 		Rel:  "",
 		Kind: model.KindDir,
 	}
-	b := &builder{root: in.Root, nodes: map[string]*model.Node{"": root}}
+	b := &builder{root: in.Root, nodes: map[string]*model.Node{"": root}, worktreeParents: map[string]bool{}}
 
 	// Directory skeleton first, so every later placement finds its parent
 	// already present and in the right order.
@@ -79,6 +79,12 @@ func Build(in Input) (*model.Node, Summary) {
 			continue
 		}
 		n := &model.Node{Name: path.Base(r.Rel), Path: r.Path, Rel: r.Rel, Kind: model.KindWorktree, Repo: &r}
+		// Record the directory this worktree actually lives in, regardless of
+		// how it ends up parented below: pruneEmptyWorktreeDirs needs this to
+		// know which directory nodes exist only because a worktree was parked
+		// there, as opposed to a same-looking directory the user made for
+		// some other reason.
+		b.worktreeParents[path.Dir(strings.Trim(r.Rel, "/"))] = true
 		// Hang the worktree off its primary checkout rather than off the
 		// sibling `<name>-worktrees` directory it physically lives in. The
 		// filesystem layout is an implementation detail of where the user
@@ -116,7 +122,7 @@ func Build(in Input) (*model.Node, Summary) {
 		n.Ghost = &g
 	}
 
-	pruneEmptyWorktreeDirs(root)
+	pruneEmptyWorktreeDirs(root, b.worktreeParents)
 	root.Sort()
 	return root, summarize(root)
 }
@@ -124,6 +130,13 @@ func Build(in Input) (*model.Node, Summary) {
 type builder struct {
 	root  string
 	nodes map[string]*model.Node
+	// worktreeParents is the set of rel paths that are the actual filesystem
+	// parent directory of at least one worktree in this Build's input,
+	// populated as worktrees are placed. It is what lets
+	// pruneEmptyWorktreeDirs tell a directory that exists only to hold a
+	// worktree apart from an ordinary directory that merely shares the
+	// naming convention.
+	worktreeParents map[string]bool
 }
 
 // dir returns the directory node at rel, creating it and any missing ancestors.
@@ -169,16 +182,20 @@ func (b *builder) abs(rel string) string {
 	return path.Join(b.root, rel)
 }
 
-// pruneEmptyWorktreeDirs drops `<name>-worktrees` directory nodes left childless
-// after their worktrees were re-parented onto the primary checkout. Other empty
-// directories are kept: the user created those deliberately, and an empty
-// directory is exactly where they are likely to want the "init a repo here"
-// action.
-func pruneEmptyWorktreeDirs(n *model.Node) {
+// pruneEmptyWorktreeDirs drops directory nodes left childless after the
+// worktree(s) they actually held were re-parented onto their primary
+// checkouts. Eligibility comes from worktreeParents -- built while placing
+// worktrees, from where they really live on disk -- not from a directory's
+// name: matching the `-worktrees` naming convention is not by itself a
+// reliable signal (the convention is only where worktrees happen to be
+// parked, per scan.Walk's own comment on the point), so an ordinary empty
+// directory that merely shares that name, e.g. one the user created via "new
+// repo" as a staging spot, is left alone like any other empty directory.
+func pruneEmptyWorktreeDirs(n *model.Node, worktreeParents map[string]bool) {
 	kept := n.Children[:0]
 	for _, c := range n.Children {
-		pruneEmptyWorktreeDirs(c)
-		if c.Kind == model.KindDir && len(c.Children) == 0 && strings.HasSuffix(c.Name, "-worktrees") {
+		pruneEmptyWorktreeDirs(c, worktreeParents)
+		if c.Kind == model.KindDir && len(c.Children) == 0 && worktreeParents[c.Rel] {
 			continue
 		}
 		kept = append(kept, c)
