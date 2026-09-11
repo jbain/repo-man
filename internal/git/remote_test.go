@@ -121,6 +121,7 @@ func TestValidateCloneURL_Reject(t *testing.T) {
 		{"whitespace only", "   "},
 		{"leading dash", "--upload-pack=touch /tmp/pwned"},
 		{"leading dash shorthand-looking", "-oProxyCommand=id"},
+		{"scp-like with a dash-prefixed host", "user@-oProxyCommand=id:path"},
 		{"ext transport", "ext::sh -c id"},
 		{"ext transport embedded", "https://ext::sh -c id"},
 		{"file scheme", "file:///etc/passwd"},

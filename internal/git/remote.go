@@ -119,6 +119,17 @@ func ValidateCloneURL(raw string) (string, error) {
 		}
 		return trimmed, nil
 	case scpLikeRe.MatchString(trimmed):
+		// The leading-dash guard above only catches a dash at the very start
+		// of the string, but scpLikeRe's host character class itself
+		// includes "-": "user@-oProxyCommand=...:path" doesn't start with a
+		// dash (it starts with "user@"), yet the regex still captures
+		// "-oProxyCommand=..." as the host. Reject that host shape
+		// specifically, since it's exactly the same flag-smuggling this
+		// function exists to block, just one character deeper in.
+		m := scpLikeRe.FindStringSubmatch(trimmed)
+		if strings.HasPrefix(m[1], "-") {
+			return "", fmt.Errorf("%q has a scp-style host that starts with a dash", trimmed)
+		}
 		return trimmed, nil
 	default:
 		return normalizeShorthand(trimmed)
