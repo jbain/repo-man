@@ -36,6 +36,8 @@ func TestResolve(t *testing.T) {
 		{"NUL byte", "a\x00b", "", "", true},
 		{"leading dash would become a git flag", "--upload-pack=evil", "", "", true},
 		{"leading dash on a later element", "a/--exec=evil", "", "", true},
+		{"dot-prefixed element is invisible to the scanner", "a/.hidden", "", "", true},
+		{"dot-prefixed element at the front", ".hidden/a", "", "", true},
 	}
 
 	for _, tc := range tests {
@@ -158,7 +160,7 @@ func TestValidName(t *testing.T) {
 			t.Errorf("ValidName(%q) = %v, want nil", s, err)
 		}
 	}
-	invalid := []string{"", ".", "..", "a/b", `a\b`, "-flag", "a\x00b", "line\nbreak"}
+	invalid := []string{"", ".", "..", "a/b", `a\b`, "-flag", "a\x00b", "line\nbreak", ".hidden", ".git"}
 	for _, s := range invalid {
 		if err := ValidName(s); err == nil {
 			t.Errorf("ValidName(%q) = nil, want an error", s)

@@ -182,6 +182,7 @@ func TestPathTraversalIsRejectedByTheHandlers(t *testing.T) {
 	}{
 		{"init above the root", "/api/init", `{"parent":"../../..","name":"pwn"}`, http.StatusForbidden},
 		{"init with a separator in the name", "/api/init", `{"parent":"","name":"../pwn"}`, http.StatusBadRequest},
+		{"init with a dot-prefixed name", "/api/init", `{"parent":"","name":".hidden"}`, http.StatusBadRequest},
 		{"clone above the root", "/api/clone", `{"url":"https://github.com/a/b","dest":"../../etc/pwn"}`, http.StatusForbidden},
 		{"clone an ext:: url", "/api/clone", `{"url":"ext::sh -c 'touch /tmp/pwn'"}`, http.StatusBadRequest},
 		{"clone a flag-shaped url", "/api/clone", `{"url":"--upload-pack=touch /tmp/pwn"}`, http.StatusBadRequest},

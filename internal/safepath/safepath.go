@@ -28,12 +28,17 @@ var ErrOutsideRoot = errors.New("path is outside the root directory")
 // That makes a hand-typed "/etc/passwd" resolve to <root>/etc/passwd, which is
 // harmless, instead of silently reaching outside the tree.
 //
-// The path must not contain a "." or ".."
-// element, and must not contain a NUL byte or a leading dash on any element.
-// The leading-dash rule matters because these paths become git command
-// arguments: a directory literally named "--upload-pack=..." would otherwise
-// be parsed as a flag. Callers additionally pass "--" to git, so this is
-// defense in depth, not the only guard.
+// The path must not contain a "." or ".." element or any dot-prefixed
+// element (e.g. ".hidden"), and must not contain a NUL byte or a leading
+// dash on any element. The dot-prefix rule matters because scan.Walk
+// unconditionally skips dot-prefixed directories as hidden support state
+// (.cache, .config, and so on); a checkout created at such a path would pass
+// validation here and then never appear in any scan, tree, or API response
+// again, with no error ever surfacing to explain why. The leading-dash rule
+// matters because these paths become git command arguments: a directory
+// literally named "--upload-pack=..." would otherwise be parsed as a flag.
+// Callers additionally pass "--" to git, so this is defense in depth, not the
+// only guard.
 //
 // An empty rel resolves to root itself.
 func Resolve(root, rel string) (abs string, cleanRel string, err error) {
@@ -55,6 +60,8 @@ func Resolve(root, rel string) (abs string, cleanRel string, err error) {
 		switch {
 		case seg == "" || seg == "." || seg == "..":
 			return "", "", fmt.Errorf("%w: %q has an empty or relative element", ErrOutsideRoot, rel)
+		case strings.HasPrefix(seg, "."):
+			return "", "", fmt.Errorf("path element %q must not start with a dot: hidden directories are never scanned", seg)
 		case strings.HasPrefix(seg, "-"):
 			return "", "", fmt.Errorf("path element %q must not start with a dash", seg)
 		}
@@ -122,13 +129,19 @@ func ResolveExisting(root, rel string, wantDir bool) (abs string, cleanRel strin
 }
 
 // ValidName reports whether s is usable as a single new directory name: no
-// separators, no dot-names, no leading dash, no control characters.
+// separators, no dot-prefix, no leading dash, no control characters. The
+// dot-prefix rule (not just the exact names "." and "..") matters because
+// scan.Walk treats any dot-prefixed directory as hidden support state and
+// skips it unconditionally, so a checkout created under such a name would
+// pass this check yet never appear in the tree.
 func ValidName(s string) error {
 	switch {
 	case s == "":
 		return errors.New("name must not be empty")
 	case s == "." || s == "..":
 		return fmt.Errorf("name %q is reserved", s)
+	case strings.HasPrefix(s, "."):
+		return fmt.Errorf("name %q must not start with a dot: hidden directories are never scanned", s)
 	case strings.ContainsAny(s, `/\`):
 		return errors.New("name must not contain a path separator")
 	case strings.HasPrefix(s, "-"):

@@ -91,6 +91,7 @@ func TestInitRepoRejections(t *testing.T) {
 		{"name that is a parent reference", "", "..", nil},
 		{"name that would become a git flag", "", "--bare", nil},
 		{"empty name", "", "", nil},
+		{"dot-prefixed name is invisible to the scanner", "", ".hidden", nil},
 	}
 
 	for _, tc := range tests {
