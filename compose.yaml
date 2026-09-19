@@ -42,14 +42,14 @@ services:
       # of private repos.
       GH_TOKEN: "${GH_TOKEN:-}"
 
-    volumes:
+    #volumes:
       # The checkout tree. Read-write: cloning and initializing write here.
-      - "${REPO_ROOT:-${HOME}/git}:/git"
+      #- "${REPO_ROOT:-${HOME}/git}:/git"
       # git identity and any credential/url rewriting rules, read-only.
-      - "${HOME}/.gitconfig:/home/repoman/.gitconfig:ro"
+      #- "${HOME}/.gitconfig:/home/repoman/.gitconfig:ro"
       # ssh keys and known_hosts, read-only, for ssh remotes. Comment this out
       # if every remote you use is https.
-      - "${HOME}/.ssh:/home/repoman/.ssh:ro"
+      #- "${HOME}/.ssh:/home/repoman/.ssh:ro"
 
     # The process is a single Go binary with a handful of git children; these
     # limits exist to keep a runaway clone from taking the host down, not

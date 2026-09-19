@@ -1,13 +1,16 @@
 package index
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -309,5 +312,79 @@ func TestFetchAllSkipsWorktrees(t *testing.T) {
 	}
 	if filepath.Base(targets[0]) != "repo-a" {
 		t.Errorf("target = %q, want the primary checkout", targets[0])
+	}
+}
+
+func TestAnUninspectableCheckoutIsLoggedAndWarnedAbout(t *testing.T) {
+	root := buildTree(t)
+
+	// A directory whose .git is an unusable gitdir pointer: the scanner still
+	// reports it as a checkout (dropping it would hide a real repo), and
+	// `git status` in it then fails. Before this was reported, the only trace
+	// of such a repo was one word in a tooltip.
+	broken := filepath.Join(root, "github.com", "jbain", "broken")
+	if err := os.MkdirAll(broken, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, ".git"), []byte("gitdir: /nowhere/at/all\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var logged bytes.Buffer
+	ix := New(testConfig(root), nil, slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	ix.scan(context.Background())
+
+	n := tree.Find(ix.Snapshot().Root, "github.com/jbain/broken")
+	if n == nil || n.Repo == nil {
+		t.Fatal("the broken checkout is missing from the tree")
+	}
+	if n.Repo.Err == "" {
+		t.Fatal("the broken checkout has no error recorded")
+	}
+
+	if !strings.Contains(logged.String(), "inspect failed") {
+		t.Errorf("an uninspectable checkout must be logged; log was:\n%s", logged.String())
+	}
+	var warned bool
+	for _, w := range ix.Snapshot().Warnings {
+		if strings.Contains(w, "github.com/jbain/broken") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("an uninspectable checkout must produce a warning; got %v", ix.Snapshot().Warnings)
+	}
+}
+
+func TestInspectFailureWarningsAreCapped(t *testing.T) {
+	root := buildTree(t)
+	for i := 0; i < maxInspectWarnings+3; i++ {
+		dir := filepath.Join(root, "github.com", "jbain", fmt.Sprintf("broken-%d", i))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: /nowhere\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ix := New(testConfig(root), nil, testLogger())
+	ix.scan(context.Background())
+
+	var inspectWarnings int
+	var summarized bool
+	for _, w := range ix.Snapshot().Warnings {
+		if strings.Contains(w, "could not inspect ") {
+			inspectWarnings++
+		}
+		if strings.Contains(w, "and 3 more") {
+			summarized = true
+		}
+	}
+	if inspectWarnings != maxInspectWarnings {
+		t.Errorf("listed %d inspect warnings, want the cap of %d", inspectWarnings, maxInspectWarnings)
+	}
+	if !summarized {
+		t.Errorf("the warnings above the cap must be summarized; got %v", ix.Snapshot().Warnings)
 	}
 }

@@ -10,6 +10,7 @@ package index
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -211,6 +212,7 @@ func (ix *Index) scan(ctx context.Context) {
 	for _, e := range res.Errs {
 		warnings = append(warnings, e.Error())
 	}
+	warnings = append(warnings, ix.reportInspectFailures(repos)...)
 
 	ghosts, ghostWarn, listedAt := ix.ghostSnapshot()
 	warnings = append(warnings, ghostWarn...)
@@ -237,6 +239,43 @@ func (ix *Index) scan(ctx context.Context) {
 		Warnings:  warnings,
 	})
 	ix.log.Debug("scan complete", "repos", len(repos), "took", time.Since(start))
+}
+
+// maxInspectWarnings caps how many per-checkout failures reach the UI's warning
+// box. One misconfigured root can fail every repo under it, and a wall of
+// identical messages buries the summary line that explains what to do; the log
+// still gets every one of them.
+const maxInspectWarnings = 5
+
+// reportInspectFailures logs every checkout that could not be inspected and
+// returns the warnings to publish with the snapshot. Before this existed an
+// inspection failure was recorded only in Repo.Err, which reached the operator
+// as the word "uninspectable" in a tooltip and nothing else — no log line, no
+// warning, nothing to grep.
+func (ix *Index) reportInspectFailures(repos []model.Repo) []string {
+	var failed []model.Repo
+	for _, r := range repos {
+		if r.Err != "" {
+			failed = append(failed, r)
+		}
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+
+	for _, r := range failed {
+		ix.log.Warn("inspect failed", "rel", r.Rel, "path", r.Path, "err", r.Err)
+	}
+
+	warnings := make([]string, 0, maxInspectWarnings+1)
+	for _, r := range failed {
+		if len(warnings) == maxInspectWarnings {
+			warnings = append(warnings, fmt.Sprintf("… and %d more checkout(s) could not be inspected", len(failed)-maxInspectWarnings))
+			break
+		}
+		warnings = append(warnings, "could not inspect "+r.Rel+": "+r.Err)
+	}
+	return warnings
 }
 
 // fetchAll refreshes remote-tracking refs for every primary checkout with an
@@ -302,7 +341,13 @@ func (ix *Index) FetchRepo(ctx context.Context, absPath string) error {
 	if n := findByPath(ix.Snapshot().Root, absPath); n != nil && n.Repo != nil && n.Repo.IsWorktree && n.Repo.MainPath != "" {
 		target = n.Repo.MainPath
 	}
+	start := time.Now()
 	err := ix.fetchOne(ctx, target)
+	if err != nil {
+		ix.log.Warn("fetch failed", "path", target, "took", time.Since(start), "err", err)
+	} else {
+		ix.log.Info("fetch complete", "path", target, "took", time.Since(start))
+	}
 	ix.ScanNow()
 	return err
 }

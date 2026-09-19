@@ -518,6 +518,25 @@ func TestInspect_ErrorsOnNonRepo(t *testing.T) {
 	}
 }
 
+func TestGitError_AddsAnOperatorHint(t *testing.T) {
+	// The hint is what turns a message aimed at someone standing in the repo
+	// into one that names the repo-man-level cause, since that is the only
+	// thing the reader of a dashboard row or a log line can act on.
+	err := gitError([]string{"status"}, []byte("fatal: detected dubious ownership in repository at '/git/x'"), errors.New("exit status 128"))
+	msg := err.Error()
+	if !strings.Contains(msg, "dubious ownership") {
+		t.Errorf("the hint must not replace git's own message: %s", msg)
+	}
+	if !strings.Contains(msg, "UID/GID") {
+		t.Errorf("a dubious-ownership failure should explain the uid mismatch: %s", msg)
+	}
+
+	plain := gitError([]string{"status"}, []byte("fatal: something else entirely"), errors.New("exit status 1"))
+	if strings.Contains(plain.Error(), "[") {
+		t.Errorf("an unrecognized failure must not gain a hint: %s", plain.Error())
+	}
+}
+
 func TestHardenedEnv_NoTerminalPrompt(t *testing.T) {
 	requireGit(t)
 	// A clone against a URL that requires a credential should fail fast

@@ -38,8 +38,10 @@ type Node struct {
 }
 
 // Sort orders a node's children for display and recurses: directories first,
-// then checkouts, then ghosts, each group alphabetical. Ghosts sink to the
-// bottom so the repos you actually have stay at the top of an owner listing.
+// then everything else alphabetically. Cloned checkouts and un-cloned ghosts
+// interleave by name rather than forming separate blocks, so a repo sits in
+// the same place in the listing whether or not it happens to be on disk; the
+// UI's "only cloned" filter, not the ordering, is what hides the ghosts.
 func (n *Node) Sort() {
 	sort.SliceStable(n.Children, func(i, j int) bool {
 		a, b := n.Children[i], n.Children[j]
@@ -54,14 +56,10 @@ func (n *Node) Sort() {
 }
 
 func kindRank(k Kind) int {
-	switch k {
-	case KindDir:
+	if k == KindDir {
 		return 0
-	case KindRepo, KindWorktree:
-		return 1
-	default: // KindGhost
-		return 2
 	}
+	return 1
 }
 
 // Repo is a local checkout, either primary or a linked worktree.
@@ -94,6 +92,23 @@ func (r Remote) Slug() string {
 		return ""
 	}
 	return r.Host + "/" + r.Owner + "/" + r.Name
+}
+
+// WebURL is somewhere a browser can go for this remote, or "" if there is no
+// way to tell. An ssh remote (git@github.com:owner/name.git) is not a URL a
+// browser can open, so the parsed coordinates are what the link is built from;
+// only when the coordinates did not parse does the raw URL stand in, and then
+// only if it was already http(s). A remote URL that is already http(s) is kept
+// as-is rather than rebuilt, so a self-hosted forge reachable only over plain
+// http still gets a link that works.
+func (r Remote) WebURL() string {
+	if strings.HasPrefix(r.URL, "https://") || strings.HasPrefix(r.URL, "http://") {
+		return r.URL
+	}
+	if s := r.Slug(); s != "" {
+		return "https://" + s
+	}
+	return ""
 }
 
 // Status is the working-tree and upstream state of a checkout, collected from
@@ -146,6 +161,16 @@ type Ghost struct {
 
 // Slug is the host/owner/name coordinate.
 func (g Ghost) Slug() string { return g.Host + "/" + g.Owner + "/" + g.Name }
+
+// WebURL is somewhere a browser can go for this repository. A ghost is not
+// cloned, so its coordinates are all there is to go on; the provider's clone
+// URL is preferred when it is already browsable.
+func (g Ghost) WebURL() string {
+	if strings.HasPrefix(g.CloneURL, "https://") || strings.HasPrefix(g.CloneURL, "http://") {
+		return g.CloneURL
+	}
+	return "https://" + g.Slug()
+}
 
 // Owner is a configured provider account whose full repo list should be shown,
 // so repos you have not cloned appear as ghosts under their owner directory.

@@ -56,19 +56,20 @@ ARG GID=1000
 RUN addgroup -g "${GID}" repoman && \
     adduser -D -u "${UID}" -G repoman -h /home/repoman repoman
 
+RUN mkdir /git && chown repoman:repoman /git
 COPY --from=build /out/repoman /usr/local/bin/repoman
 
 USER ${UID}:${GID}
 ENV HOME=/home/repoman \
     REPOMAN_ROOT=/git \
-    REPOMAN_ADDR=0.0.0.0:8464 \
+    REPOMAN_ADDR=0.0.0.0:8090 \
     GH_NO_UPDATE_NOTIFIER=1 \
     GIT_TERMINAL_PROMPT=0
 
 # The checkout tree is a bind mount; declaring it makes the contract obvious
 # and stops a forgotten -v from silently writing into the container layer.
 VOLUME ["/git"]
-EXPOSE 8464
+EXPOSE 8090
 
 # No shell form: repoman must receive SIGTERM directly so its graceful
 # shutdown runs instead of being killed by the shell's PID 1.

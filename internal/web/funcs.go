@@ -15,7 +15,7 @@ func templateFuncs() template.FuncMap {
 		"badges":     badges,
 		"statusWord": statusWord,
 		"short":      short,
-		"hasPrefix":  strings.HasPrefix,
+		"errSummary": errSummary,
 	}
 }
 
@@ -43,6 +43,23 @@ func ago(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dy ago", int(d.Hours()/(24*365)))
 	}
+}
+
+// errSummary trims the "git <the whole command line>: " prefix off a failure
+// so the part that says what actually went wrong is what survives the row's
+// truncation. The untrimmed text stays in the row's title attribute, since
+// which git invocation failed matters once you are actually debugging.
+func errSummary(msg string) string {
+	rest, ok := strings.CutPrefix(msg, "git ")
+	if !ok {
+		return msg
+	}
+	// The command line itself never contains ": ", so the first occurrence
+	// ends the prefix.
+	if _, after, found := strings.Cut(rest, ": "); found && after != "" {
+		return after
+	}
+	return msg
 }
 
 func short(sha string) string {

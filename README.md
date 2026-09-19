@@ -2,8 +2,6 @@
 
 A web dashboard for the git repositories you have checked out locally.
 
-![repo-man dashboard](docs/screenshot.png)
-
 It assumes the Go-style layout — every checkout under one root, keyed by its
 origin:
 
@@ -92,6 +90,40 @@ A repository counts as "already cloned" if any checkout under the root has it
 as `origin`, not merely if something sits at the conventional path. Clone
 `dotfiles` into a directory named something else and it still won't show up as
 a ghost.
+
+Within a directory, sub-directories come first and everything else is
+alphabetical by name, ghosts included: a repository sits in the same place in
+the listing whether or not you happen to have cloned it. The **Only cloned**
+toggle in the toolbar hides the ghosts (and any directory left holding
+nothing else) when you want the local-only view; it is a client-side filter,
+remembered per browser.
+
+Every row links out to its remote, including rows for repositories that are
+not cloned. The link is built from the parsed host/owner/name rather than the
+remote URL's own scheme, so an ssh remote (`git@github.com:owner/name.git`)
+still gets one; only a remote already reachable over http(s) is linked
+verbatim, which keeps a plain-http self-hosted forge working.
+
+Status is reported as toasts in the lower right, not as a banner above the
+tree: a banner that appears or grows reflows everything under it, which moved
+the row you were about to click. Each toast carries an X, and fades after 30
+seconds — except one tracking a running operation, which is sticky until the
+operation ends and then follows the same 30-second rule. With scripting off,
+the same information is the server-rendered operations list, which is what the
+toasts are built from.
+
+Clone and init are logged at `INFO` when they start and finish (with the
+destination, the URL and the elapsed time) and at `WARN` when they fail. The
+job registry forgets a job after half an hour and entirely on restart, which is
+no use to anyone asking the next morning why a repository is missing or
+half-written.
+
+A checkout that cannot be inspected — most often because repo-man is running
+as a user that doesn't own the tree — shows the git failure in its row, adds
+it to the warnings above the tree, and logs it at `WARN` with the path. If
+git's own message is one of the few that assumes you're standing in the repo
+(dubious ownership, permission denied, missing credentials), the reported
+error also names the repo-man-level cause.
 
 ## Security
 

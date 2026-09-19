@@ -40,7 +40,7 @@ func TestInitRepoCreatesARepository(t *testing.T) {
 	}
 
 	var changed int
-	svc := New(root, nil, func() { changed++ })
+	svc := New(root, nil, func() { changed++ }, nil)
 
 	rel, err := svc.InitRepo(context.Background(), "github.com/jbain", "new-thing", "main")
 	if err != nil {
@@ -60,7 +60,7 @@ func TestInitRepoCreatesARepository(t *testing.T) {
 func TestInitRepoAtTheRoot(t *testing.T) {
 	requireGit(t)
 	root := newRoot(t)
-	svc := New(root, nil, nil)
+	svc := New(root, nil, nil, nil)
 
 	rel, err := svc.InitRepo(context.Background(), "", "scratch", "")
 	if err != nil {
@@ -77,7 +77,7 @@ func TestInitRepoRejections(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "taken"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	svc := New(root, nil, nil)
+	svc := New(root, nil, nil, nil)
 
 	tests := []struct {
 		name     string
@@ -120,7 +120,7 @@ func TestInitRepoLeavesAnExistingDirectoryAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := New(root, nil, nil)
+	svc := New(root, nil, nil, nil)
 	if _, err := svc.InitRepo(context.Background(), "", "taken", ""); !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v, want ErrExists", err)
 	}
@@ -140,7 +140,7 @@ func TestInitRepoLeavesAnExistingDirectoryAlone(t *testing.T) {
 func TestInitRepoRejectsAConcurrentCallForTheSameDestination(t *testing.T) {
 	requireGit(t)
 	root := newRoot(t)
-	svc := New(root, nil, nil)
+	svc := New(root, nil, nil, nil)
 
 	abs, _, err := safepath.Resolve(root, "concurrent")
 	if err != nil {
@@ -172,7 +172,7 @@ func TestInitRepoRejectsAConcurrentCallForTheSameDestination(t *testing.T) {
 func TestInitRepoConcurrentCallsRaceToExactlyOneWinner(t *testing.T) {
 	requireGit(t)
 	root := newRoot(t)
-	svc := New(root, nil, nil)
+	svc := New(root, nil, nil, nil)
 
 	const n = 8
 	start := make(chan struct{})
@@ -246,7 +246,7 @@ func TestCloneValidatesBeforeStartingAnyWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg := jobs.New(jobs.Options{Base: context.Background()})
-	svc := New(root, reg, nil)
+	svc := New(root, reg, nil, nil)
 
 	tests := []struct {
 		name   string
@@ -294,7 +294,7 @@ func TestCloneStartsAJobAndReportsFailure(t *testing.T) {
 
 	done := make(chan struct{}, 1)
 	reg := jobs.New(jobs.Options{Base: context.Background(), OnDone: func() { done <- struct{}{} }})
-	svc := New(root, reg, nil)
+	svc := New(root, reg, nil, nil)
 
 	job, err := svc.Clone(CloneRequest{URL: "https://127.0.0.1:1/jbain/thing.git", Dest: "local/mirror"})
 	if err != nil {
@@ -325,8 +325,9 @@ func TestCloneStartsAJobAndReportsFailure(t *testing.T) {
 func TestCloneDerivesTheConventionalDestination(t *testing.T) {
 	requireGit(t)
 	root := newRoot(t)
-	reg := jobs.New(jobs.Options{Base: context.Background()})
-	svc := New(root, reg, nil)
+	done := make(chan struct{}, 1)
+	reg := jobs.New(jobs.Options{Base: context.Background(), OnDone: func() { done <- struct{}{} }})
+	svc := New(root, reg, nil, nil)
 
 	job, err := svc.Clone(CloneRequest{URL: "https://127.0.0.1:1/jbain/thing.git"})
 	if err != nil {
@@ -335,11 +336,21 @@ func TestCloneDerivesTheConventionalDestination(t *testing.T) {
 	if want := "127.0.0.1/jbain/thing"; job.Target != want {
 		t.Errorf("target = %q, want %q derived from the URL", job.Target, want)
 	}
+
+	// The job only had to be *started* for the assertion above, but it is
+	// still writing into the temp root; returning here leaves t.TempDir's
+	// cleanup racing a live git process, which fails the test intermittently
+	// with "directory not empty".
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("clone job never finished")
+	}
 }
 
 func TestCloneWithoutARegistryFails(t *testing.T) {
 	root := newRoot(t)
-	svc := New(root, nil, nil)
+	svc := New(root, nil, nil, nil)
 	if _, err := svc.Clone(CloneRequest{URL: "https://github.com/a/b"}); err == nil {
 		t.Fatal("expected an error when no job registry is configured")
 	}

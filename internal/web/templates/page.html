@@ -19,6 +19,8 @@
   <div class="toolbar">
     <button type="button" class="btn" id="btn-new">New repo</button>
     <button type="button" class="btn" id="btn-clone">Clone by URL</button>
+    <button type="button" class="btn" id="btn-local" aria-pressed="false"
+            title="Hide repositories that exist on the provider but are not cloned here">Only cloned</button>
     <button type="button" class="btn" data-action="rescan" title="Re-walk the filesystem">Rescan</button>
     <button type="button" class="btn" data-action="fetchall" title="git fetch every checkout with a remote">Fetch all</button>
     <button type="button" class="btn btn--icon" id="btn-theme" aria-label="Switch colour theme" title="Switch colour theme">
@@ -31,8 +33,6 @@
     {{end}}
   </div>
 </header>
-
-<p class="notice" id="notice" role="alert" hidden></p>
 
 <main>
   <div id="live">
@@ -83,6 +83,11 @@
     </div>
   </form>
 </dialog>
+
+<!-- Toasts stack here, outside every region the poll replaces and outside the
+     document flow, so a status message can never move the tree under the
+     reader's cursor. -->
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
 </body>
 </html>

@@ -47,12 +47,21 @@ fragment.html emits it bare for app.js to swap into that div.
 {{end}}
 
 
+{{- /*
+The jobs section is the no-JS view of in-flight operations, and, when JS is
+running, the data app.js builds its toasts from: it stays in the fragment
+(hidden by CSS on <html class="js">) so a job's progress rides along with the
+tree poll instead of needing a second request. The data-* attributes exist for
+that reader — text scraped out of the markup would break the moment the
+wording changed.
+*/ -}}
 {{define "jobs"}}
 {{- with .Jobs -}}
 <section class="jobs" aria-label="Operations">
   <ul>
     {{range .}}
-    <li class="job job--{{.State}}{{if .Running}} is-running{{end}}" data-job="{{.ID}}">
+    <li class="job job--{{.State}}{{if .Running}} is-running{{end}}"
+        data-job="{{.ID}}" data-kind="{{.Kind}}" data-state="{{.State}}" data-target="{{.Target}}">
       <span class="job-kind">{{.Kind}}</span>
       <span class="job-label mono" title="{{.Label}}">{{.Label}}</span>
       <span class="job-state">{{.State}}</span>
@@ -127,7 +136,7 @@ fragment.html emits it bare for app.js to swap into that div.
 <span class="glyph glyph--{{$n.Kind}}" aria-hidden="true">{{if eq $n.Kind "worktree"}}⌥{{else}}●{{end}}</span>
 <span class="name mono" title="{{$n.Rel}}">{{$n.Name}}</span>
 {{- if $r.Err}}
-<span class="branch mono is-error" title="{{$r.Err}}">uninspectable</span>
+<span class="branch mono is-error" title="{{$r.Err}}">no status</span>
 {{- else}}
 <span class="branch mono" title="{{if $s.Upstream}}tracking {{$s.Upstream}}{{else}}no upstream{{end}}">
   {{- if $s.Detached}}<span class="det">detached</span> {{short $s.Head}}{{else}}{{$s.Branch}}{{end -}}
@@ -136,13 +145,18 @@ fragment.html emits it bare for app.js to swap into that div.
 <span class="badges">
   {{- range badges $r}}{{if ne .Class "ok"}}<span class="badge badge--{{.Class}}" title="{{.Title}}">{{.Label}}</span>{{end}}{{end -}}
 </span>
+{{- if $r.Err}}
+{{- /* The failure itself, in the row: a tooltip is not somewhere anyone
+       thinks to look when a repo is inexplicably blank. */ -}}
+<span class="errmsg mono" title="{{$r.Err}}">{{errSummary $r.Err}}</span>
+{{- end}}
 <span class="spacer"></span>
 <span class="meta">
   {{- if and (not $r.Err) $s.Subject}}<span class="subject" title="{{$s.Subject}}">{{$s.Subject}}</span>{{end}}
   {{- if and (not $r.Err) (not $s.LastCommit.IsZero)}}<span class="when" title="last commit">{{ago $s.LastCommit}}</span>{{end -}}
 </span>
 <span class="actions">
-  {{- if hasPrefix $r.Remote.URL "http"}}<a class="btn btn--quiet" href="{{$r.Remote.URL}}" target="_blank" rel="noreferrer noopener" title="{{$r.Remote.URL}}">open<span class="sr-only"> remote in a new tab</span></a>{{end}}
+  {{- with $r.Remote.WebURL}}<a class="btn btn--quiet" href="{{.}}" target="_blank" rel="noreferrer noopener" title="{{.}}">open<span class="sr-only"> remote in a new tab</span></a>{{end}}
   <button type="button" class="btn btn--quiet" data-action="fetch" data-rel="{{$n.Rel}}"
           title="git fetch — last fetched {{ago $s.LastFetch}}">fetch</button>
 </span>
@@ -165,6 +179,7 @@ fragment.html emits it bare for app.js to swap into that div.
   {{- if not $g.UpdatedAt.IsZero}}<span class="when" title="last updated on the remote">{{ago $g.UpdatedAt}}</span>{{end -}}
 </span>
 <span class="actions actions--hover">
+  {{- with $g.WebURL}}<a class="btn btn--quiet" href="{{.}}" target="_blank" rel="noreferrer noopener" title="{{.}}">open<span class="sr-only"> on the provider in a new tab</span></a>{{end}}
   <button type="button" class="btn btn--primary" data-action="clone" data-url="{{$g.CloneURL}}" data-dest="{{$n.Rel}}"
           title="Clone into {{$n.Rel}}">clone</button>
 </span>

@@ -49,7 +49,7 @@ func newServer(t *testing.T, passphrase string) (http.Handler, *config.Config, *
 	ix := index.New(cfg, nil, log)
 	reg := jobs.New(jobs.Options{Base: ctx, OnDone: ix.ScanNow})
 	t.Cleanup(reg.Wait)
-	act := actions.New(cfg.Root, reg, ix.ScanNow)
+	act := actions.New(cfg.Root, reg, ix.ScanNow, log)
 	authn := auth.New(auth.Options{Passphrase: passphrase})
 
 	srv, err := New(cfg, ix, act, reg, authn, log)

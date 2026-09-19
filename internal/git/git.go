@@ -47,7 +47,28 @@ func gitError(args []string, stderr []byte, err error) error {
 	if msg == "" {
 		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
-	return fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+	return fmt.Errorf("git %s: %s%s", strings.Join(args, " "), msg, hint(msg))
+}
+
+// hint appends operator-facing advice to the handful of git failures whose own
+// stderr is accurate but assumes a reader sitting at a terminal in the repo.
+// These messages end up in a dashboard row and a log line instead, where "run
+// this command to fix it" is not something the reader can act on directly, so
+// the hint names the repo-man-level cause.
+func hint(msg string) string {
+	switch {
+	case strings.Contains(msg, "dubious ownership"):
+		// The overwhelmingly common cause: the container runs as a uid that
+		// does not own the bind-mounted checkout tree.
+		return " [repo-man is running as a different user than the one that owns this checkout: match UID/GID to the tree's owner, or add the path to git's safe.directory]"
+	case strings.Contains(msg, "not a git repository"):
+		return " [the .git entry here is not a usable repository]"
+	case strings.Contains(strings.ToLower(msg), "permission denied"):
+		return " [repo-man cannot read this path as the user it runs as]"
+	case strings.Contains(msg, "could not read Username"), strings.Contains(msg, "Authentication failed"):
+		return " [no usable credentials: check GH_TOKEN and the mounted gitconfig credential helper]"
+	}
+	return ""
 }
 
 // hardenedEnv returns the environment every git invocation runs with:

@@ -66,7 +66,7 @@ func run(args []string) error {
 
 	ix := index.New(cfg, lister, log)
 	reg := jobs.New(jobs.Options{Base: ctx, OnDone: ix.ScanNow})
-	act := actions.New(cfg.Root, reg, ix.ScanNow)
+	act := actions.New(cfg.Root, reg, ix.ScanNow, log)
 	authn := auth.New(auth.Options{
 		Passphrase:   cfg.Passphrase,
 		SecureCookie: cfg.SecureCookie,

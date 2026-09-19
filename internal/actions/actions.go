@@ -12,10 +12,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jbain/repo-man/internal/git"
 	"github.com/jbain/repo-man/internal/jobs"
@@ -26,6 +28,7 @@ import (
 type Service struct {
 	root string
 	reg  *jobs.Registry
+	log  *slog.Logger
 	// onChange is called after a synchronous action changes the filesystem, to
 	// trigger a rescan. Clone jobs signal through the registry's own callback.
 	onChange func()
@@ -42,12 +45,15 @@ type Service struct {
 }
 
 // New returns a Service rooted at root. reg may be nil only in tests that do
-// not clone.
-func New(root string, reg *jobs.Registry, onChange func()) *Service {
+// not clone; log may be nil, which uses the default logger.
+func New(root string, reg *jobs.Registry, onChange func(), log *slog.Logger) *Service {
 	if onChange == nil {
 		onChange = func() {}
 	}
-	return &Service{root: root, reg: reg, onChange: onChange, initing: make(map[string]struct{})}
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Service{root: root, reg: reg, log: log, onChange: onChange, initing: make(map[string]struct{})}
 }
 
 // beginInit claims abs for an in-flight InitRepo call, returning false if
@@ -110,11 +116,14 @@ func (s *Service) InitRepo(ctx context.Context, parentRel, name, branch string) 
 		return "", err
 	}
 
+	dest := path.Join(parentClean, rel)
 	if err := git.Init(ctx, abs, branch); err != nil {
+		s.log.Warn("init failed", "dest", dest, "branch", branch, "err", err)
 		return "", err
 	}
+	s.log.Info("init complete", "dest", dest, "branch", branch)
 	s.onChange()
-	return path.Join(parentClean, rel), nil
+	return dest, nil
 }
 
 // CloneRequest describes a requested clone.
@@ -156,9 +165,25 @@ func (s *Service) Clone(req CloneRequest) (jobs.Job, error) {
 		return jobs.Job{}, errors.New("clone is not available: no job registry configured")
 	}
 
-	return s.reg.Start("clone", rel, url+" → "+rel, func(ctx context.Context, w *jobs.TailWriter) error {
-		return git.Clone(ctx, url, abs, w)
+	// Every clone leaves a trail in the log as well as in the job registry:
+	// the registry forgets a job after half an hour and entirely on restart,
+	// which is no use to anyone asking the next morning why a repo is missing
+	// or half-written.
+	s.log.Info("clone starting", "url", url, "dest", rel)
+	started := time.Now()
+	job, err := s.reg.Start("clone", rel, url+" → "+rel, func(ctx context.Context, w *jobs.TailWriter) error {
+		cerr := git.Clone(ctx, url, abs, w)
+		if cerr != nil {
+			s.log.Warn("clone failed", "url", url, "dest", rel, "took", time.Since(started), "err", cerr)
+		} else {
+			s.log.Info("clone complete", "url", url, "dest", rel, "took", time.Since(started))
+		}
+		return cerr
 	})
+	if err != nil {
+		s.log.Warn("clone not started", "url", url, "dest", rel, "err", err)
+	}
+	return job, err
 }
 
 // DestFor derives the conventional root-relative destination for a clone URL:

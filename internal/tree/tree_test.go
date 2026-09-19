@@ -200,7 +200,7 @@ func TestGhostDoesNotDisplaceAnExistingDirectory(t *testing.T) {
 	}
 }
 
-func TestSortPutsDirectoriesFirstAndGhostsLast(t *testing.T) {
+func TestSortPutsDirectoriesFirstThenNamesAlphabetically(t *testing.T) {
 	got, _ := Build(Input{
 		Root:   root,
 		Dirs:   []string{"github.com", "github.com/jbain", "github.com/jbain/zzz-dir"},
@@ -211,7 +211,9 @@ func TestSortPutsDirectoriesFirstAndGhostsLast(t *testing.T) {
 	if owner == nil {
 		t.Fatal("owner node missing")
 	}
-	want := []string{"zzz-dir", "mid", "aaa-ghost"}
+	// zzz-dir sorts first only because it is a directory; the ghost and the
+	// cloned repo then interleave by name, cloned status playing no part.
+	want := []string{"zzz-dir", "aaa-ghost", "mid"}
 	got2 := childNames(owner)
 	if len(got2) != len(want) {
 		t.Fatalf("children = %v, want %v", got2, want)
