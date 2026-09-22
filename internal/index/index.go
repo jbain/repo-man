@@ -96,8 +96,10 @@ func New(cfg *config.Config, lister Lister, log *slog.Logger) *Index {
 // Snapshot returns the current view. Never nil.
 func (ix *Index) Snapshot() *Snapshot { return ix.snap.Load() }
 
-// ScanNow requests a filesystem rescan. It returns immediately; the scan
-// happens on the index's own goroutine.
+// ScanNow requests a filesystem rescan, preceded by a refresh of each
+// configured owner's GitHub listing so a newly created or forked repo shows
+// up as a ghost without waiting for the GitHub-interval timer. It returns
+// immediately; the work happens on the index's own goroutine.
 func (ix *Index) ScanNow() {
 	select {
 	case ix.scanNow <- struct{}{}:
@@ -141,6 +143,7 @@ func (ix *Index) Run(ctx context.Context) {
 		case <-scanTick.C:
 			ix.scan(ctx)
 		case <-ix.scanNow:
+			ix.refreshGhosts(ctx)
 			ix.scan(ctx)
 		case <-fetchC:
 			ix.fetchAll(ctx)
