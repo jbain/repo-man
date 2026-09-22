@@ -60,8 +60,8 @@ RUN mkdir /git #&& chown repoman:repoman /git
 COPY --from=build /out/repoman /usr/local/bin/repoman
 
 #USER ${UID}:${GID}
-ENV HOME=/home/repoman \
-    REPOMAN_ROOT=/git \
+#ENV HOME=/home/repoman \
+ENV REPOMAN_ROOT=/git \
     REPOMAN_ADDR=0.0.0.0:8090 \
     GH_NO_UPDATE_NOTIFIER=1 \
     GIT_TERMINAL_PROMPT=0
