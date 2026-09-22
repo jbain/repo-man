@@ -361,6 +361,49 @@ func TestFetch_UpdatesFetchHead(t *testing.T) {
 	}
 }
 
+func TestPull_FastForwards(t *testing.T) {
+	requireGit(t)
+	upstream := newRepoWithCommit(t)
+	localParent := t.TempDir()
+	local := filepath.Join(localParent, "local")
+	runGit(t, localParent, "clone", "-q", upstream, local)
+
+	gitC(t, upstream, "commit", "-q", "-m", "second", "--allow-empty")
+	wantHead := strings.TrimSpace(runGit(t, upstream, "rev-parse", "HEAD"))
+
+	if err := Pull(context.Background(), local); err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+
+	gotHead := strings.TrimSpace(runGit(t, local, "rev-parse", "HEAD"))
+	if gotHead != wantHead {
+		t.Errorf("local HEAD = %q, want %q (upstream HEAD)", gotHead, wantHead)
+	}
+}
+
+func TestPull_RefusesNonFastForward(t *testing.T) {
+	requireGit(t)
+	upstream := newRepoWithCommit(t)
+	localParent := t.TempDir()
+	local := filepath.Join(localParent, "local")
+	runGit(t, localParent, "clone", "-q", upstream, local)
+
+	// Diverge both sides so neither is an ancestor of the other: a
+	// fast-forward is impossible either way.
+	gitC(t, local, "commit", "-q", "-m", "local only", "--allow-empty")
+	localHead := strings.TrimSpace(runGit(t, local, "rev-parse", "HEAD"))
+	gitC(t, upstream, "commit", "-q", "-m", "upstream only", "--allow-empty")
+
+	if err := Pull(context.Background(), local); err == nil {
+		t.Fatal("Pull: want error on a non-fast-forward, got nil")
+	}
+
+	gotHead := strings.TrimSpace(runGit(t, local, "rev-parse", "HEAD"))
+	if gotHead != localHead {
+		t.Errorf("local HEAD changed after a refused pull: got %q, want unchanged %q", gotHead, localHead)
+	}
+}
+
 func TestInit_Basic(t *testing.T) {
 	requireGit(t)
 	base := t.TempDir()

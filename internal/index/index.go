@@ -355,6 +355,24 @@ func (ix *Index) FetchRepo(ctx context.Context, absPath string) error {
 	return err
 }
 
+// PullRepo fetches and fast-forwards a single checkout's currently checked-out
+// branch, then triggers a rescan. Unlike FetchRepo, a worktree is pulled at
+// its own path rather than redirected to the primary checkout: a pull updates
+// the working tree, and each worktree has its own.
+func (ix *Index) PullRepo(ctx context.Context, absPath string) error {
+	ctx, cancel := context.WithTimeout(ctx, ix.cfg.FetchTimeout)
+	defer cancel()
+	start := time.Now()
+	err := git.Pull(ctx, absPath)
+	if err != nil {
+		ix.log.Warn("pull failed", "path", absPath, "took", time.Since(start), "err", err)
+	} else {
+		ix.log.Info("pull complete", "path", absPath, "took", time.Since(start))
+	}
+	ix.ScanNow()
+	return err
+}
+
 func findByPath(n *model.Node, absPath string) *model.Node {
 	if n.Path == absPath {
 		return n

@@ -159,6 +159,8 @@ wording changed.
   {{- with $r.Remote.WebURL}}<a class="btn btn--quiet" href="{{.}}" target="_blank" rel="noreferrer noopener" title="{{.}}">open<span class="sr-only"> remote in a new tab</span></a>{{end}}
   <button type="button" class="btn btn--quiet" data-action="fetch" data-rel="{{$n.Rel}}"
           title="git fetch — last fetched {{ago $s.LastFetch}}">fetch</button>
+  <button type="button" class="btn btn--quiet" data-action="pull" data-rel="{{$n.Rel}}"
+          title="git pull --ff-only — fetch and fast-forward {{if $s.Upstream}}{{$s.Upstream}}{{else}}the checked-out branch{{end}}">pull</button>
 </span>
 {{end}}
 
