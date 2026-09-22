@@ -56,7 +56,7 @@ RUN apk add --no-cache \
 #RUN addgroup -g "${GID}" repoman && \
 #    adduser -D -u "${UID}" -G repoman -h /home/repoman repoman
 
-RUN mkdir /git && chown repoman:repoman /git
+RUN mkdir /git #&& chown repoman:repoman /git
 COPY --from=build /out/repoman /usr/local/bin/repoman
 
 #USER ${UID}:${GID}
