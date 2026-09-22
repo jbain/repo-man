@@ -48,18 +48,18 @@ RUN apk add --no-cache \
 # The service reads and writes the user's checkout tree on a bind mount, so it
 # must run as a uid that owns those files. Override at build time to match the
 # host user: --build-arg UID=$(id -u) --build-arg GID=$(id -g)
-ARG UID=1000
-ARG GID=1000
+#ARG UID=1000
+#ARG GID=1000
 # No `|| true` here: if the uid or gid collides with an account the base image
 # already has, the build should fail loudly rather than produce an image that
 # runs as the wrong user and writes unreadable clones.
-RUN addgroup -g "${GID}" repoman && \
-    adduser -D -u "${UID}" -G repoman -h /home/repoman repoman
+#RUN addgroup -g "${GID}" repoman && \
+#    adduser -D -u "${UID}" -G repoman -h /home/repoman repoman
 
 RUN mkdir /git && chown repoman:repoman /git
 COPY --from=build /out/repoman /usr/local/bin/repoman
 
-USER ${UID}:${GID}
+#USER ${UID}:${GID}
 ENV HOME=/home/repoman \
     REPOMAN_ROOT=/git \
     REPOMAN_ADDR=0.0.0.0:8090 \
