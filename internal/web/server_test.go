@@ -187,6 +187,7 @@ func TestPathTraversalIsRejectedByTheHandlers(t *testing.T) {
 		{"clone an ext:: url", "/api/clone", `{"url":"ext::sh -c 'touch /tmp/pwn'"}`, http.StatusBadRequest},
 		{"clone a flag-shaped url", "/api/clone", `{"url":"--upload-pack=touch /tmp/pwn"}`, http.StatusBadRequest},
 		{"fetch above the root", "/api/fetch", `{"path":"../../.."}`, http.StatusBadRequest},
+		{"pull above the root", "/api/pull", `{"path":"../../.."}`, http.StatusBadRequest},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

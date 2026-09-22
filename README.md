@@ -17,9 +17,12 @@ their primary checkout with the same status indicators and a distinct look.
 Under a configured account directory it also lists the repositories you have
 on GitHub but have *not* cloned, greyed out, with a one-click clone.
 
-Beyond looking, it does exactly three things: create a directory and `git init`
-it, clone one of your own repositories, and clone any repository by URL. It
-never modifies, moves, or deletes an existing checkout.
+Beyond looking, it does exactly four things: create a directory and `git init`
+it, clone one of your own repositories, clone any repository by URL, and
+fetch or pull an existing checkout on request. Pull only ever fast-forwards
+(`--ff-only`) — it refuses rather than merging, rebasing, or touching a dirty
+working tree, so it never moves or deletes anything. Nothing here ever
+deletes a checkout.
 
 ## Running it
 
@@ -67,8 +70,10 @@ Three loops, no stored state:
 - **Fetch** (every 15m) refreshes remote-tracking refs so "behind origin" means
   something. It only fetches *primary* checkouts: worktrees share the object
   store and remote refs, so fetching them would repeat identical network work.
-  This is the only loop that touches the network. A per-repo refresh button
-  fetches on demand.
+  This is the only loop that touches the network. A per-repo fetch button
+  fetches on demand, and a per-repo pull button fetches and then fast-forwards
+  (`--ff-only`) the checked-out branch onto its upstream, refusing rather than
+  merging or rebasing if that's not possible.
 - **List** (every 30m) reloads each configured account's repository list
   through `gh`. A failed refresh keeps serving the previous list rather than
   making every un-cloned repository vanish because a token expired.
@@ -190,7 +195,7 @@ internal/model/     shared types — the contract between every other package
 internal/config/    flags and environment
 internal/safepath/  confining user-supplied paths to the root
 internal/scan/      the filesystem walk
-internal/git/       every git subprocess: status, fetch, init, clone, URL parsing
+internal/git/       every git subprocess: status, fetch, pull, init, clone, URL parsing
 internal/github/    repository listings via the gh CLI
 internal/tree/      assembling scan + status + listings into the display tree
 internal/index/     the collection loops and the published snapshot

@@ -1,7 +1,7 @@
 // Package git is the only place in repo-man that shells out to the git
 // binary. It collects remote and working-tree status for checkouts the
 // scanner has already found, and performs the handful of mutating
-// operations the web layer offers (init, clone, fetch). Every exec call goes
+// operations the web layer offers (init, clone, fetch, pull). Every exec call goes
 // through this package so the process-hardening rules below (no shell, a
 // scrubbed environment, no accidental index locks) are applied exactly once.
 package git
@@ -143,6 +143,18 @@ func Fetch(ctx context.Context, absPath string) error {
 	// (which runs an arbitrary command as the "remote") regardless of what a
 	// remote URL already configured in the repo says.
 	_, err := run(ctx, absPath, "-c", "protocol.ext.allow=never", "fetch", "--all", "--prune", "--quiet")
+	return err
+}
+
+// Pull fetches the current branch's upstream and fast-forwards onto it.
+// --ff-only refuses rather than creating a merge commit or invoking a rebase:
+// those need a human to resolve conflicts or review history, which is not
+// something a dashboard button should ever do unattended. A checkout with
+// local commits the upstream hasn't seen, or a dirty working tree that
+// collides with the incoming changes, fails cleanly and reports why instead
+// of leaving a merge in progress.
+func Pull(ctx context.Context, absPath string) error {
+	_, err := run(ctx, absPath, "-c", "protocol.ext.allow=never", "pull", "--ff-only", "--prune", "--quiet")
 	return err
 }
 

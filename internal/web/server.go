@@ -74,6 +74,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tree", s.handleAPITree)
 	mux.HandleFunc("POST /api/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /api/fetch", s.handleFetchRepo)
+	mux.HandleFunc("POST /api/pull", s.handlePullRepo)
 	mux.HandleFunc("POST /api/init", s.handleInit)
 	mux.HandleFunc("POST /api/clone", s.handleClone)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
@@ -247,6 +248,31 @@ func (s *Server) handleFetchRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "fetched"})
+}
+
+type pullRequest struct {
+	Path string `json:"path"` // root-relative path of the checkout
+}
+
+// handlePullRepo fetches and fast-forwards a single checkout's checked-out
+// branch and waits for the result, mirroring handleFetchRepo.
+func (s *Server) handlePullRepo(w http.ResponseWriter, r *http.Request) {
+	var req pullRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	abs, _, err := safepath.ResolveExisting(s.cfg.Root, req.Path, true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.FetchTimeout)
+	defer cancel()
+	if err := s.ix.PullRepo(ctx, abs); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "pulled"})
 }
 
 type initRequest struct {

@@ -2,7 +2,7 @@
  *
  * The tree is server-rendered and works without any of this. What follows adds
  * a theme toggle, live refresh of the #live region, collapse persistence, the
- * two action dialogs, the per-row fetch/clone buttons, and the toasts that
+ * two action dialogs, the per-row fetch/pull/clone buttons, and the toasts that
  * report what those buttons did.
  *
  * The CSP forbids inline scripts and handlers, so everything is wired here with
@@ -363,6 +363,10 @@
     fetch: function (btn) {
       return api('/api/fetch', { method: 'POST', body: { path: btn.dataset.rel } })
         .then(function () { say('Fetched ' + (btn.dataset.rel || 'repo') + '.', 'ok'); });
+    },
+    pull: function (btn) {
+      return api('/api/pull', { method: 'POST', body: { path: btn.dataset.rel } })
+        .then(function () { say('Pulled ' + (btn.dataset.rel || 'repo') + '.', 'ok'); });
     },
     clone: function (btn) {
       // Optimistic: the button spins from the click, not from the first poll
