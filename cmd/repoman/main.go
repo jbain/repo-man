@@ -65,7 +65,10 @@ func run(args []string) error {
 	}
 
 	ix := index.New(cfg, lister, log)
-	reg := jobs.New(jobs.Options{Base: ctx, OnDone: ix.ScanNow})
+	// A clone can change what the provider reports as un-cloned, so its
+	// completion refreshes the ghost listing; InitRepo is purely local (see
+	// its doc comment) and only needs a filesystem rescan.
+	reg := jobs.New(jobs.Options{Base: ctx, OnDone: ix.RefreshGhostsNow})
 	act := actions.New(cfg.Root, reg, ix.ScanNow, log)
 	authn := auth.New(auth.Options{
 		Passphrase:   cfg.Passphrase,

@@ -55,11 +55,12 @@ type Index struct {
 
 	snap atomic.Pointer[Snapshot]
 
-	// scanNow and fetchNow are buffered depth-1 channels: a signal sent while
-	// one is already pending is dropped, which coalesces a burst of UI refresh
-	// clicks into a single pass instead of queueing a dozen of them.
-	scanNow  chan struct{}
-	fetchNow chan struct{}
+	// scanNow, fetchNow, and ghostsNow are buffered depth-1 channels: a signal
+	// sent while one is already pending is dropped, which coalesces a burst of
+	// UI refresh clicks into a single pass instead of queueing a dozen of them.
+	scanNow   chan struct{}
+	fetchNow  chan struct{}
+	ghostsNow chan struct{}
 
 	// ghosts caches the last successful provider listing per owner. A failed
 	// refresh keeps serving the previous list rather than making every
@@ -85,6 +86,7 @@ func New(cfg *config.Config, lister Lister, log *slog.Logger) *Index {
 		log:       log,
 		scanNow:   make(chan struct{}, 1),
 		fetchNow:  make(chan struct{}, 1),
+		ghostsNow: make(chan struct{}, 1),
 		ghosts:    map[string][]model.Ghost{},
 		ghostWarn: map[string]string{},
 	}
@@ -96,9 +98,9 @@ func New(cfg *config.Config, lister Lister, log *slog.Logger) *Index {
 // Snapshot returns the current view. Never nil.
 func (ix *Index) Snapshot() *Snapshot { return ix.snap.Load() }
 
-// ScanNow requests a filesystem rescan, preceded by a refresh of each
-// configured owner's GitHub listing so a newly created or forked repo shows
-// up as a ghost without waiting for the GitHub-interval timer. It returns
+// ScanNow requests a filesystem rescan. It touches only the local disk, so a
+// purely local action (creating a directory, initializing a repo) can trigger
+// it without also depending on network access to a provider. It returns
 // immediately; the work happens on the index's own goroutine.
 func (ix *Index) ScanNow() {
 	select {
@@ -111,6 +113,19 @@ func (ix *Index) ScanNow() {
 func (ix *Index) FetchNow() {
 	select {
 	case ix.fetchNow <- struct{}{}:
+	default:
+	}
+}
+
+// RefreshGhostsNow requests a refresh of each configured owner's GitHub
+// listing, followed by a rescan, so a repo that was just cloned or created on
+// the provider shows up correctly without waiting for the GitHub-interval
+// timer. Unlike ScanNow, this reaches out to the network, so it belongs only
+// after an action that could actually change what the provider reports (a
+// clone) rather than a purely local one (initializing a new repo).
+func (ix *Index) RefreshGhostsNow() {
+	select {
+	case ix.ghostsNow <- struct{}{}:
 	default:
 	}
 }
@@ -143,6 +158,8 @@ func (ix *Index) Run(ctx context.Context) {
 		case <-scanTick.C:
 			ix.scan(ctx)
 		case <-ix.scanNow:
+			ix.scan(ctx)
+		case <-ix.ghostsNow:
 			ix.refreshGhosts(ctx)
 			ix.scan(ctx)
 		case <-fetchC:
